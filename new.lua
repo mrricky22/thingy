@@ -62,4 +62,3 @@ end
 
 -- Run initially and then every 10 minutes
 sendMoneyToWebhook() -- Initial call
-queue_on_teleport(scriptToRun)
