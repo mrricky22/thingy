@@ -59,6 +59,7 @@ local function sendMoneyToWebhook()
         warn("Failed to send webhook: " .. tostring(response))
     end
 end
-
+game.Loaded:Wait()
+wait(1)
 -- Run initially and then every 10 minutes
 sendMoneyToWebhook() -- Initial call
