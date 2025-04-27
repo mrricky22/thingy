@@ -59,5 +59,5 @@ local function sendMoneyToWebhook()
         warn("Failed to send webhook: " .. tostring(response))
     end
 end
-
+wait(5)
 sendMoneyToWebhook() -- Initial call
