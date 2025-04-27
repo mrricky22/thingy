@@ -59,7 +59,6 @@ local function sendMoneyToWebhook()
         warn("Failed to send webhook: " .. tostring(response))
     end
 end
-game.Loaded:Wait()
-wait(1)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/BlitzIsKing/UniversalFarm/refs/heads/main/Jailbreak/autoArrest"))()
 -- Run initially and then every 10 minutes
 sendMoneyToWebhook() -- Initial call
