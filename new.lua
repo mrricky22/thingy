@@ -12,6 +12,56 @@ local scriptToRun = [[
     loadstring(game:HttpGet("https://raw.githubusercontent.com/mrricky22/thingy/refs/heads/main/new.lua"))()
 ]]
 
+-- File configuration
+local LOG_FOLDER = "MoneyLog"
+local LOG_FILE = LOG_FOLDER .. "/money_log.txt"
+
+-- In-memory log for current session
+local moneyLog = {} -- Format: {{money = number, timestamp = number}, ...}
+
+-- Function to ensure log folder exists
+local function ensureLogFolder()
+    local success, err = pcall(function()
+        makefolder(LOG_FOLDER)
+    end)
+    if not success then
+        warn("Failed to create log folder: " .. tostring(err))
+    end
+end
+
+-- Function to read existing log file
+local function loadLogFile()
+    local success, content = pcall(function()
+        return readfile(LOG_FILE)
+    end)
+    if success and content then
+        for line in content:gmatch("[^\r\n]+") do
+            local money, timestamp = line:match("^(%d+),(%d+)$")
+            if money and timestamp then
+                table.insert(moneyLog, {
+                    money = tonumber(money),
+                    timestamp = tonumber(timestamp)
+                })
+            end
+        end
+        print("Loaded " .. #moneyLog .. " entries from log file")
+    else
+        print("No existing log file or failed to read: " .. tostring(content))
+    end
+end
+
+-- Function to append money and timestamp to file
+local function appendToLog(money, timestamp)
+    local success, err = pcall(function()
+        appendfile(LOG_FILE, money .. "," .. timestamp .. "\n")
+    end)
+    if success then
+        table.insert(moneyLog, {money = money, timestamp = timestamp})
+    else
+        warn("Failed to append to log file: " .. tostring(err))
+    end
+end
+
 -- Function to get local player's information
 local function getLocalPlayerInfo()
     local player = Players.LocalPlayer
@@ -24,7 +74,8 @@ local function getLocalPlayerInfo()
         PlayerName = player.Name,
         UserId = player.UserId,
         Money = 0,
-        Timestamp = os.date("%Y-%m-%d %H:%M:%S")
+        Timestamp = os.date("%Y-%m-%d %H:%M:%S"),
+        UnixTimestamp = os.time()
     }
     
     local leaderstats = player:FindFirstChild("leaderstats")
@@ -43,6 +94,33 @@ local function getLocalPlayerInfo()
     return info
 end
 
+-- Function to calculate total earned and estimated earnings per hour
+local function calculateEarnings()
+    if #moneyLog == 0 then
+        return 0, 0
+    end
+    
+    -- Total earned: Current money - First recorded money
+    local totalEarned = moneyLog[#moneyLog].money - (moneyLog[1] and moneyLog[1].money or 0)
+    
+    -- Estimated earnings per hour
+    local earningsPerHour = 0
+    if #moneyLog >= 2 then
+        local lastEntry = moneyLog[#moneyLog]
+        local prevEntry = moneyLog[#moneyLog - 1]
+        
+        local moneyDiff = lastEntry.money - prevEntry.money
+        local timeDiff = lastEntry.timestamp - prevEntry.timestamp -- Time difference in seconds
+        
+        if timeDiff > 0 then
+            -- Earnings per second * 3600 (seconds in an hour)
+            earningsPerHour = (moneyDiff / timeDiff) * 3600
+        end
+    end
+    
+    return totalEarned, earningsPerHour
+end
+
 -- Function to send player info to Discord webhook
 local function sendMoneyToWebhook()
     local playerInfo = getLocalPlayerInfo()
@@ -52,13 +130,21 @@ local function sendMoneyToWebhook()
         return
     end
     
+    -- Append to log file and in-memory log
+    appendToLog(playerInfo.Money, playerInfo.UnixTimestamp)
+    
+    -- Calculate earnings
+    local totalEarned, earningsPerHour = calculateEarnings()
+    
     local message = {
         embeds = {{
             title = "Player Money Update",
             fields = {
                 {name = "Player", value = playerInfo.PlayerName, inline = true},
                 {name = "User ID", value = tostring(playerInfo.UserId), inline = true},
-                {name = "Money", value = "$" .. playerInfo.Money, inline = true},
+                {name = "Current Money", value = "$" .. playerInfo.Money, inline = true},
+                {name = "Total Earned", value = "$" .. totalEarned, inline = true},
+                {name = "Est. Earnings/Hour", value = "$" .. math.floor(earningsPerHour + 0.5), inline = true},
                 {name = "Timestamp", value = playerInfo.Timestamp, inline = false}
             },
             color = 0x00FF00,
@@ -83,10 +169,12 @@ local function sendMoneyToWebhook()
     if success then
         if response.StatusCode == 200 or response.StatusCode == 204 then
             print(string.format(
-                "[%s] Webhook sent successfully - Player: %s, Money: $%d, Status: %d",
+                "[%s] Webhook sent successfully - Player: %s, Money: $%d, Total Earned: $%d, Est. $/hr: $%d, Status: %d",
                 playerInfo.Timestamp,
                 playerInfo.PlayerName,
                 playerInfo.Money,
+                totalEarned,
+                math.floor(earningsPerHour + 0.5),
                 response.StatusCode
             ))
         else
@@ -115,6 +203,10 @@ local function startWebhookLoop()
         wait(60) -- Wait 60 seconds (1 minute)
     end
 end
+
+-- Initialize: Create folder and load existing log
+ensureLogFolder()
+loadLogFile()
 
 -- Start the loop in a coroutine to prevent blocking
 coroutine.wrap(startWebhookLoop)()
