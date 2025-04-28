@@ -21,42 +21,58 @@ local moneyLog = {} -- Format: {{money = number, timestamp = number}, ...}
 
 -- Function to ensure log folder exists
 local function ensureLogFolder()
-    local success, err = pcall(function()
-        makefolder(LOG_FOLDER)
-    end)
-    if not success then
-        warn("Failed to create log folder: " .. tostring(err))
+    if not isfolder(LOG_FOLDER) then
+        local success, err = pcall(function()
+            makefolder(LOG_FOLDER)
+        end)
+        if not success then
+            warn("Failed to create log folder: " .. tostring(err))
+        else
+            print("Created log folder: " .. LOG_FOLDER)
+        end
+    else
+        print("Log folder already exists: " .. LOG_FOLDER)
     end
 end
 
 -- Function to read existing log file
 local function loadLogFile()
-    local success, content = pcall(function()
-        return readfile(LOG_FILE)
-    end)
-    if success and content then
-        for line in content:gmatch("[^\r\n]+") do
-            local money, timestamp = line:match("^(%d+),(%d+)$")
-            if money and timestamp then
-                table.insert(moneyLog, {
-                    money = tonumber(money),
-                    timestamp = tonumber(timestamp)
-                })
+    if isfile(LOG_FILE) then
+        local success, content = pcall(function()
+            return readfile(LOG_FILE)
+        end)
+        if success and content then
+            for line in content:gmatch("[^\r\n]+") do
+                local money, timestamp = line:match("^(%d+),(%d+)$")
+                if money and timestamp then
+                    table.insert(moneyLog, {
+                        money = tonumber(money),
+                        timestamp = tonumber(timestamp)
+                    })
+                end
             end
+            print("Loaded " .. #moneyLog .. " entries from log file")
+        else
+            warn("Failed to read log file: " .. tostring(content))
         end
-        print("Loaded " .. #moneyLog .. " entries from log file")
     else
-        print("No existing log file or failed to read: " .. tostring(content))
+        print("No log file exists, will create new one on first write")
     end
 end
 
 -- Function to append money and timestamp to file
 local function appendToLog(money, timestamp)
     local success, err = pcall(function()
+        -- Create file if it doesn't exist
+        if not isfile(LOG_FILE) then
+            writefile(LOG_FILE, "")
+            print("Created new log file: " .. LOG_FILE)
+        end
         appendfile(LOG_FILE, money .. "," .. timestamp .. "\n")
     end)
     if success then
         table.insert(moneyLog, {money = money, timestamp = timestamp})
+        print("Appended to log: Money = " .. money .. ", Timestamp = " .. timestamp)
     else
         warn("Failed to append to log file: " .. tostring(err))
     end
@@ -204,7 +220,7 @@ local function startWebhookLoop()
     end
 end
 
--- Initialize: Create folder and load existing log
+-- Initialize: Check folder and load existing log
 ensureLogFolder()
 loadLogFile()
 
