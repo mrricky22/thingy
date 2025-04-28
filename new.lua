@@ -13,27 +13,10 @@ local scriptToRun = [[
 ]]
 
 -- File configuration
-local LOG_FOLDER = "MoneyLog"
-local LOG_FILE = LOG_FOLDER .. "/money_log.txt"
+local LOG_FILE = "money.txt"
 
 -- In-memory log for current session
 local moneyLog = {} -- Format: {{money = number, timestamp = number}, ...}
-
--- Function to ensure log folder exists
-local function ensureLogFolder()
-    if not isfolder(LOG_FOLDER) then
-        local success, err = pcall(function()
-            makefolder(LOG_FOLDER)
-        end)
-        if not success then
-            warn("Failed to create log folder: " .. tostring(err))
-        else
-            print("Created log folder: " .. LOG_FOLDER)
-        end
-    else
-        print("Log folder already exists: " .. LOG_FOLDER)
-    end
-end
 
 -- Function to read existing log file
 local function loadLogFile()
@@ -43,7 +26,7 @@ local function loadLogFile()
         end)
         if success and content then
             for line in content:gmatch("[^\r\n]+") do
-                local money, timestamp = line:match("^(%d+),(%d+)$")
+                local money, timestamp = line:match("^(%d+):(%d+)$")
                 if money and timestamp then
                     table.insert(moneyLog, {
                         money = tonumber(money),
@@ -68,7 +51,7 @@ local function appendToLog(money, timestamp)
             writefile(LOG_FILE, "")
             print("Created new log file: " .. LOG_FILE)
         end
-        appendfile(LOG_FILE, money .. "," .. timestamp .. "\n")
+        appendfile(LOG_FILE, money .. ":" .. timestamp .. "\n")
     end)
     if success then
         table.insert(moneyLog, {money = money, timestamp = timestamp})
@@ -119,7 +102,7 @@ local function calculateEarnings()
     -- Total earned: Current money - First recorded money
     local totalEarned = moneyLog[#moneyLog].money - (moneyLog[1] and moneyLog[1].money or 0)
     
-    -- Estimated earnings per hour
+    -- Estimated earnings per hour: Compare with previous entry
     local earningsPerHour = 0
     if #moneyLog >= 2 then
         local lastEntry = moneyLog[#moneyLog]
@@ -220,8 +203,7 @@ local function startWebhookLoop()
     end
 end
 
--- Initialize: Check folder and load existing log
-ensureLogFolder()
+-- Initialize: Load existing log
 loadLogFile()
 
 -- Start the loop in a coroutine to prevent blocking
