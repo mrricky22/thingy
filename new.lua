@@ -5,6 +5,7 @@ local TeleportService = game:GetService("TeleportService")
 -- Discord webhook URL
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1366018421711572992/TYeidqVzp8q69J4WiAYzYXBA33ka-_25jfONzMcOM44DE_1mxk89cIY9Tb3uUNg9GgTT"
 local scriptToRun = [[
+  game.Loaded:Wait()
   loadstring(game:HttpGet("https://raw.githubusercontent.com/BlitzIsKing/UniversalFarm/refs/heads/main/Jailbreak/autoArrest"))()
 ]]
 
@@ -14,6 +15,11 @@ local LOG_FILE = "money.txt"
 -- In-memory log for current session
 local moneyLog = {} -- Format: {{money = number, timestamp = number, jobId = string}, ...}
 
+-- Game info
+local place_id = game.PlaceId
+local job_id = game.JobId
+local API = "https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100"
+
 -- Function to read existing log file
 local function loadLogFile()
     if isfile(LOG_FILE) then
@@ -22,12 +28,12 @@ local function loadLogFile()
         end)
         if success and content then
             for line in content:gmatch("[^\r\n]+") do
-                local money, timestamp, jobId = line:match("^(%d+):(%d+):(.+)$")
-                if money and timestamp and jobId then
+                local money, timestamp, jobId = line:match("^(%d+):(%d+):([^\n]*)$")
+                if money and timestamp then
                     table.insert(moneyLog, {
                         money = tonumber(money),
                         timestamp = tonumber(timestamp),
-                        jobId = jobId
+                        jobId = jobId or ""
                     })
                 end
             end
@@ -40,7 +46,7 @@ local function loadLogFile()
     end
 end
 
--- Function to append money, timestamp, and jobId to file
+-- Function to append money and timestamp to file
 local function appendToLog(money, timestamp, jobId)
     local success, err = pcall(function()
         if not isfile(LOG_FILE) then
@@ -114,12 +120,8 @@ local function calculateEarnings()
     return totalEarned, earningsPerHour
 end
 
--- Server hopping function
+-- Function to hop to a random server
 local function hopServer()
-    local place_id = game.PlaceId
-    local job_id = game.JobId
-    local API = "https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100"
-    
     local request = loadstring(game:HttpGet("https://raw.githubusercontent.com/EpicPug/Stuff/main/request.lua"))()
     if request then
         local data
@@ -129,13 +131,13 @@ local function hopServer()
         success, response = pcall(function()
             data = request({Url = API:format(place_id)})
         end)
-        
+
         if success and data and data.Body then
             local decode
             success, response = pcall(function()
                 decode = HttpService:JSONDecode(data.Body)
             end)
-            
+
             if success and decode and decode.data then
                 for _, found in pairs(decode.data) do
                     if type(found) == "table" and found["id"] ~= job_id then
@@ -146,30 +148,27 @@ local function hopServer()
                         })
                     end
                 end
-                
+
                 if #found_servers > 0 then
-                    -- Pick a random server with available slots
-                    local available_servers = {}
-                    for _, v in ipairs(found_servers) do
-                        if v.playing < v.maxPlayers then
-                            table.insert(available_servers, v)
+                    local valid_servers = {}
+                    for _, server in ipairs(found_servers) do
+                        if server.playing < server.maxPlayers then
+                            table.insert(valid_servers, server)
                         end
                     end
-                    
-                    if #available_servers > 0 then
-                        local random_index = math.random(1, #available_servers)
-                        local target_server = available_servers[random_index]
+
+                    if #valid_servers > 0 then
+                        local random_index = math.random(1, #valid_servers)
+                        local selected_server = valid_servers[random_index]
                         
-                        -- Queue the script to run on teleport
                         queue_on_teleport(scriptToRun)
                         
-                        -- Set up teleport retry
                         TeleportService.TeleportInitFailed:Connect(function()
-                            TeleportService:TeleportToPlaceInstance(place_id, target_server.id, Players.LocalPlayer)
+                            TeleportService:TeleportToPlaceInstance(place_id, selected_server.id, Players.LocalPlayer)
                         end)
-                        
+
                         repeat
-                            TeleportService:TeleportToPlaceInstance(place_id, target_server.id, Players.LocalPlayer)
+                            TeleportService:TeleportToPlaceInstance(place_id, selected_server.id, Players.LocalPlayer)
                             task.wait(2)
                         until not game
                     end
@@ -188,20 +187,19 @@ local function sendMoneyToWebhook()
         return
     end
     
-    -- Check if no money was gained in the same JobId
-    if #moneyLog > 0 then
+    appendToLog(playerInfo.Money, playerInfo.UnixTimestamp, playerInfo.JobId)
+    
+    if #moneyLog >= 2 then
         local lastEntry = moneyLog[#moneyLog]
-        if lastEntry.jobId == playerInfo.JobId and lastEntry.money == playerInfo.Money then
-            print("No money gained in same JobId, initiating server hop")
+        local prevEntry = moneyLog[#moneyLog - 1]
+        
+        if lastEntry.jobId == prevEntry.jobId and lastEntry.money <= prevEntry.money then
+            print("No money gained in same server, initiating server hop")
             hopServer()
             return
         end
     end
     
-    -- Append to log file and in-memory log
-    appendToLog(playerInfo.Money, playerInfo.UnixTimestamp, playerInfo.JobId)
-    
-    -- Calculate earnings
     local totalEarned, earningsPerHour = calculateEarnings()
     
     local message = {
@@ -217,7 +215,6 @@ local function sendMoneyToWebhook()
                 {name = "Timestamp", value = playerInfo.Timestamp, inline = false}
             },
             color = 0x00FF00,
-           oding
             timestamp = playerInfo.Timestamp
         }}
     }
