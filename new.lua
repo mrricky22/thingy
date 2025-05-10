@@ -268,7 +268,7 @@ end
 local function startWebhookLoop()
     while true do
         sendMoneyToWebhook()
-        wait(60)
+        wait(120)
     end
 end
 
