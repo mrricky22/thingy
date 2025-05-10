@@ -152,7 +152,7 @@ local function hopServer()
                 if #found_servers > 0 then
                     local valid_servers = {}
                     for _, server in ipairs(found_servers) do
-                        if server.playing < server.maxPlayers then
+                        if server.playing <= server.maxPlayers - 4 then
                             table.insert(valid_servers, server)
                         end
                     end
